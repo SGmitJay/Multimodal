@@ -52,8 +52,8 @@ class Encoder(nn.Module):
         # 这里将自注意力和前馈神经网络合并在一起
     def forward(self, enc_inputs):
         enc_outputs = self.src_emb(enc_inputs)
-        enc_outputs = self.pos_emb(enc_outputs.transpose(0, 1)).transpose(0, 1)
-
+        
+        enc_outputs = self.pos_emb(enc_outputs)
         # get_attn_pad_mask是为了得到句子中的pad的位置信息，给到模型后面，在计算自注意力和交互注意力的时候去掉pad符号的影响
         enc_self_attns_mask = get_attn_pad_mask(enc_inputs, enc_inputs)
         enc_self_attns = []
@@ -71,8 +71,8 @@ class Decoder(nn.Module):
         self.layers = nn.ModuleList([DecoderLayer() for _ in range(n_layers)])
     def forward(self, dec_inputs, enc_inputs, enc_outputs):   # dec_inputs:[batch_size,target_len]
         dec_outputs = self.tgt_emb(dec_inputs)    # dec_outputs:[batch_size,tgt_len,d_model]
-        dec_outputs = self.pos_emb(dec_outputs.transpose(0, 1)).transpose(0, 1)
 
+        dec_outputs = self.pos_emb(dec_outputs)
         # get_attn_pad_mask 自注意力层的pad部分
         dec_self_attn_pad_mask = get_attn_pad_mask(dec_inputs, dec_inputs)
         # get_attn_subsequent_mask 这个做的是自注意层的mask部分，就是当前单词之后看不到，使用一个上三角为1的矩阵
@@ -124,14 +124,15 @@ class EncoderLayer(nn.Module):
 class PoswiseFeedForwardNet(nn.Module):
     def __init__(self):
         super(PoswiseFeedForwardNet,self).__init__()
-        self.conv1 = nn.Conv1d(in_channels=d_model, out_channels=d_ff, kernel_size=1)
-        self.conv2 = nn.Conv1d(in_channels=d_ff, out_channels=d_model, kernel_size=1)
+
+        self.linear1 = nn.Linear(d_model, d_ff, bias=False)
+        self.linear2 = nn.Linear(d_ff, d_model, bias=False)
         self.layer_norm = nn.LayerNorm(d_model)
 
     def forward(self, inputs):
         residual = inputs    # inputs:[batch_size,len_q,d_model]
-        output = nn.ReLU()(self.conv1(inputs.transpose(1, 2)))
-        output = self.conv2(output).transpose(1, 2)
+        output = nn.ReLU()(self.linear1(inputs))
+        output = self.linear2(output)
         return self.layer_norm(output+residual)
 
 
@@ -210,16 +211,16 @@ class PositionalEncoding(nn.Module):
         # 上面的代码获取之后得到的pe的形状是:[max_len,d_model]
 
         # 下面这个代码之后，得到的pe形状是[max_len,1,d_model]
-        pe = pe.unsqueeze(0).transpose(0, 1)
+        pe = pe.unsqueeze(1)
 
         # 定一个缓冲区，其简单理解为这个参数不更新就可以
         self.register_buffer('pe', pe)
 
     def forward(self, x):
         """
-        x:[seq_len,batch_size,d_model]
+        x:[batch_size,seq_len, d_model]
         """
-        x = x+self.pe[:x.size(0), :]
+        x = x+self.pe[:x.size(1), :].transpose(0, 1)
         return self.dropout(x)
 
 class Transformer(nn.Module):
@@ -277,6 +278,7 @@ if __name__ == '__main__':
         print('Epoch:', '%04d' % (epoch+1), 'cost=', '{:.6f}'.format(loss))
         loss.backward()
         optimizer.step()
+
 
 
 
