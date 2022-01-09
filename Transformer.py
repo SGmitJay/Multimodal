@@ -5,6 +5,8 @@ import torch.optim as optim
 import matplotlib.pyplot as plt
 import math
 
+
+## SG
 def make_batch(sentences):
     input_batch = [[src_vocab[n] for n in sentences[0].split()]]
     output_batch = [[tgt_vocab[n] for n in sentences[1].split()]]
